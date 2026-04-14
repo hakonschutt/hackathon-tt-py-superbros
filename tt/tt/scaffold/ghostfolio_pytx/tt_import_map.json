@@ -1,0 +1,13 @@
+{
+  "@ghostfolio/api/app/portfolio/calculator/portfolio-calculator": "app.wrapper.portfolio.calculator.portfolio_calculator",
+  "@ghostfolio/api/app/portfolio/interfaces/portfolio-order-item.interface": "app.wrapper.portfolio.interfaces.portfolio_order_item",
+  "@ghostfolio/api/helper/portfolio.helper": "app.implementation.portfolio.calculator.roai.helpers",
+  "@ghostfolio/common/calculation-helper": "app.implementation.portfolio.calculator.roai.helpers",
+  "@ghostfolio/common/helper": "app.implementation.portfolio.calculator.roai.helpers",
+  "@ghostfolio/common/interfaces": "app.wrapper.portfolio.interfaces",
+  "@ghostfolio/common/types": "app.implementation.portfolio.calculator.roai.types",
+  "@ghostfolio/common/types/performance-calculation-type.type": "app.implementation.portfolio.calculator.roai.types",
+  "big.js": "decimal",
+  "date-fns": "app.implementation.portfolio.calculator.roai.date_utils",
+  "lodash": null
+}
