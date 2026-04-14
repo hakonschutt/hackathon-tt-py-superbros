@@ -23,6 +23,18 @@ def get_factor(activity_type: str) -> int:
     return _ACTIVITY_FACTORS.get(activity_type, 0)
 
 
+def to_decimal(val) -> Decimal:
+    """Safely convert a value to Decimal."""
+    if val is None:
+        return Decimal('0')
+    if isinstance(val, Decimal):
+        return val
+    try:
+        return Decimal(str(val))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal('0')
+
+
 def parse_date(val) -> datetime:
     """Parse various date representations to datetime."""
     if isinstance(val, datetime):

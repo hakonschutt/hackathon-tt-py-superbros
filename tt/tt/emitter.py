@@ -49,7 +49,13 @@ def build_python_file(
 
     # Post-processing: fix common issues
     result = _convert_attribute_to_dict_access(result)
+    result = _fix_nullish_subscript(result)
     result = _fix_broken_lambdas(result)
+    result = _fix_field_comments(result)
+    result = _fix_sort_returns(result)
+    result = _fix_missing_constants(result)
+    result = _fix_none_arithmetic(result)
+    result = _fix_decimal_arithmetic(result)
     result = _fix_empty_bodies(result)
     result = _fix_indentation(result)
     result = _collapse_blank_lines(result)
@@ -108,6 +114,7 @@ def _convert_attribute_to_dict_access(code: str) -> str:
         "dataSource", "date", "fee", "type", "symbol", "tags",
         "userId", "skipErrors", "activitiesCount", "averagePrice",
         "dateOfFirstActivity", "includeInHoldings",
+        "endDate", "startDate", "marketPrice",
     }
 
     lines = code.split("\n")
@@ -118,14 +125,15 @@ def _convert_attribute_to_dict_access(code: str) -> str:
             if f'.{prop}' not in modified or f'self.{prop}' in modified:
                 continue
 
+            # Match: word.prop or subscript].prop or paren).prop
             pattern = re.compile(
-                r'(?<!\w)(?!self\.)(\w+)\.' + re.escape(prop) + r'(?!\w)'
+                r'(?!self\.)([\w\]\)]+)\.' + re.escape(prop) + r'(?!\w)'
             )
 
             # Check if this line is an assignment TO this property
             stripped = modified.strip()
             assign_pattern = re.compile(
-                r'^\s*\w+\.' + re.escape(prop) + r'\s*='
+                r'^\s*[\w\[\]\(\)]+\.' + re.escape(prop) + r'\s*='
             )
             if assign_pattern.match(stripped):
                 # Assignment target: obj.prop = val → obj["prop"] = val
@@ -143,6 +151,30 @@ def _convert_attribute_to_dict_access(code: str) -> str:
     return "\n".join(result)
 
 
+def _fix_nullish_subscript(code: str) -> str:
+    """Fix patterns where ?? was applied to dict subscript access.
+
+    Translates: (d[k] if d[k] is not None else default)
+    To: d.get(k, default)
+
+    This avoids KeyError when the key doesn't exist.
+    """
+    # Pattern: (X[Y] if X[Y] is not None else Z)
+    code = re.sub(
+        r'\((\w+)\[([^\]]+)\] if \1\[\2\] is not None else ([^)]+)\)',
+        lambda m: f'{m.group(1)}.get({m.group(2)}, {m.group(3)})',
+        code,
+    )
+    # Also fix: X[Y] = (X[Y] if X[Y] is not None else Z)
+    # → X[Y] = X.get(Y, Z)
+    code = re.sub(
+        r'(\w+)\[([^\]]+)\] = \(\1\[\2\] if \1\[\2\] is not None else ([^)]+)\)',
+        lambda m: f'{m.group(1)}[{m.group(2)}] = {m.group(1)}.get({m.group(2)}, {m.group(3)})',
+        code,
+    )
+    return code
+
+
 def _fix_broken_lambdas(code: str) -> str:
     """Fix lambdas that reference undefined variables from TS closures.
 
@@ -158,6 +190,108 @@ def _fix_broken_lambdas(code: str) -> str:
         r'sorted(\1, key=lambda o: (o.get("date", ""), {"start": -1, "end": 1}.get(o.get("itemType", ""), 0)))',
         code,
     )
+    return code
+
+
+def _fix_sort_returns(code: str) -> str:
+    """Fix .sort() in assignments — Python's .sort() returns None.
+
+    Translates: x = y.sort() → x = sorted(y)
+    """
+    # Pattern: var = expr.sort()
+    code = re.sub(
+        r'(\w+)\s*=\s*(.+?)\.sort\(\)',
+        lambda m: f'{m.group(1)} = sorted({m.group(2)})',
+        code,
+    )
+    return code
+
+
+def _fix_field_comments(code: str) -> str:
+    """Convert '# field: name' comments into actual attribute initializations.
+
+    The translator emits class field declarations as comments.
+    Convert them to actual None-initialized attributes.
+    """
+    code = re.sub(
+        r'^(\s*)# field: (\w+)(.*)$',
+        lambda m: f'{m.group(1)}{m.group(2)} = None',
+        code,
+        flags=re.MULTILINE,
+    )
+    return code
+
+
+def _fix_none_arithmetic(code: str) -> str:
+    """Wrap dict.get() results in to_decimal() when used in arithmetic.
+
+    Prevents TypeError when None/float values from dict.get() are used
+    in arithmetic with Decimal values. Wraps ALL .get() results that
+    appear in arithmetic context.
+    """
+    # Wrap any .get("...") followed by arithmetic operators
+    code = re.sub(
+        r'(\w+\.get\("[^"]+"\))(\s*[\*\+\-\/])',
+        r'to_decimal(\1)\2',
+        code,
+    )
+    code = re.sub(
+        r'([\*\+\-\/]\s*)(\w+\.get\("[^"]+"\))',
+        r'\1to_decimal(\2)',
+        code,
+    )
+    # Also wrap standalone unitPrice variable in arithmetic
+    code = re.sub(
+        r'(?<!\w)(unitPrice)(\s*[\*\+\-\/])',
+        r'to_decimal(\1)\2',
+        code,
+    )
+    code = re.sub(
+        r'([\*\+\-\/]\s*)(unitPrice)(?!\w)',
+        r'\1to_decimal(\2)',
+        code,
+    )
+    return code
+
+
+def _fix_decimal_arithmetic(code: str) -> str:
+    """Wrap exchange rate variables with to_decimal() for safe arithmetic.
+
+    In translated code, exchange rates come as float but prices are Decimal.
+    Python's Decimal doesn't support float arithmetic. Wrap known float
+    variables with to_decimal().
+    """
+    # Exchange rate variables that are floats
+    float_vars = [
+        "currentExchangeRate",
+        "exchangeRateAtOrderDate",
+    ]
+    for var in float_vars:
+        # Wrap: (var if var is not None else 1) → to_decimal(var if var is not None else 1)
+        code = re.sub(
+            rf'\({var} if {var} is not None else 1\)',
+            f'to_decimal({var} if {var} is not None else 1)',
+            code,
+        )
+        # Also wrap standalone uses in multiplication
+        code = re.sub(
+            rf'(\*\s*){var}(?!\w)',
+            rf'\1to_decimal({var})',
+            code,
+        )
+    return code
+
+
+def _fix_missing_constants(code: str) -> str:
+    """Replace references to TS constants that don't exist in Python wrapper.
+
+    E.g., PortfolioCalculator.ENABLE_LOGGING → False
+    """
+    code = code.replace("PortfolioCalculator.ENABLE_LOGGING", "False")
+    code = code.replace("PerformanceCalculationType.ROAI", '"ROAI"')
+    # Replace TS type references with Python equivalents
+    code = re.sub(r'\bisinstance\(([^,]+),\s*Big\)', r'isinstance(\1, Decimal)', code)
+    code = re.sub(r'\bAssetSubClass\.CASH\b', '"CASH"', code)
     return code
 
 
