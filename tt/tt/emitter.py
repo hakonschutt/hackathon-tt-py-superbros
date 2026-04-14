@@ -1,6 +1,7 @@
 """Python code emitter — assembles translated fragments into valid Python files.
 
-Handles indentation, import deduplication, empty body insertion, and formatting.
+Handles indentation, import deduplication, empty body insertion,
+and attribute-to-dict-access conversion for translated TS code.
 """
 from __future__ import annotations
 
@@ -47,6 +48,7 @@ def build_python_file(
     result = "\n".join(parts)
 
     # Post-processing: fix common issues
+    result = _convert_attribute_to_dict_access(result)
     result = _fix_empty_bodies(result)
     result = _fix_indentation(result)
     result = _collapse_blank_lines(result)
@@ -56,6 +58,60 @@ def build_python_file(
         result += "\n"
 
     return result
+
+
+def _convert_attribute_to_dict_access(code: str) -> str:
+    """Convert attribute access on dict-like objects to dict-style access.
+
+    In translated code, TS object property access (obj.prop) becomes
+    Python dict access. Assignment targets use obj["prop"] = val,
+    while reads use obj.get("prop").
+    """
+    dict_props = {
+        "feeInBaseCurrency", "feeInBaseCurrencyWithCurrencyEffect",
+        "valueInBaseCurrency", "investment", "investmentWithCurrencyEffect",
+        "grossPerformance", "grossPerformanceWithCurrencyEffect",
+        "netPerformance", "quantity", "timeWeightedInvestment",
+        "timeWeightedInvestmentWithCurrencyEffect",
+        "includeInTotalAssetValue", "unitPrice", "unitPriceFromMarketData",
+        "unitPriceInBaseCurrency", "unitPriceInBaseCurrencyWithCurrencyEffect",
+        "SymbolProfile", "itemType", "assetSubClass", "currency",
+        "dataSource", "date", "fee", "type", "symbol", "tags",
+        "userId", "skipErrors", "activitiesCount", "averagePrice",
+        "dateOfFirstActivity", "includeInHoldings",
+    }
+
+    lines = code.split("\n")
+    result = []
+    for line in lines:
+        modified = line
+        for prop in dict_props:
+            if f'.{prop}' not in modified or f'self.{prop}' in modified:
+                continue
+
+            pattern = re.compile(
+                r'(?<!\w)(?!self\.)(\w+)\.' + re.escape(prop) + r'(?!\w)'
+            )
+
+            # Check if this line is an assignment TO this property
+            stripped = modified.strip()
+            assign_pattern = re.compile(
+                r'^\s*\w+\.' + re.escape(prop) + r'\s*='
+            )
+            if assign_pattern.match(stripped):
+                # Assignment target: obj.prop = val → obj["prop"] = val
+                modified = pattern.sub(
+                    lambda m: f'{m.group(1)}["{prop}"]',
+                    modified,
+                )
+            else:
+                # Read access: obj.prop → obj.get("prop")
+                modified = pattern.sub(
+                    lambda m: f'{m.group(1)}.get("{prop}")',
+                    modified,
+                )
+        result.append(modified)
+    return "\n".join(result)
 
 
 def _fix_empty_bodies(code: str) -> str:
