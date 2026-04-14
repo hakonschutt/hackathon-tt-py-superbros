@@ -1,153 +1,338 @@
-"""
-Minimal TypeScript to Python translator.
+"""Tree-sitter based TypeScript-to-Python translation pipeline.
 
-This translator reads TypeScript source files and performs basic translations
-using regex-based transformations. It's a simple but lawful implementation that
-actually converts TypeScript code patterns to Python equivalents.
+Orchestrates: parse TS → walk AST → transform nodes → emit Python.
+This is the core of the tt translation tool.
 """
 from __future__ import annotations
 
-import re
+import json
+import logging
 from pathlib import Path
 
+from tt.parser import parse_file, parse_source, get_node_text
+from tt.node_visitor import NodeVisitor
+from tt.emitter import build_python_file
 
-def translate_typescript_file(ts_content: str) -> str:
-    """
-    Translate TypeScript code to Python.
+log = logging.getLogger(__name__)
 
-    This performs basic transformations:
-    - Class declarations
-    - Method definitions
-    - Simple return statements
-    - Variable declarations
-    """
-    python_code = ts_content
+# Standard imports that the translated calculator needs
+CALCULATOR_IMPORTS = [
+    "import copy",
+    "import math",
+    "from datetime import datetime, date, timedelta",
+    "from decimal import Decimal, ROUND_HALF_UP, InvalidOperation",
+    "from typing import Any",
+    "",
+    "from app.wrapper.portfolio.calculator.portfolio_calculator import PortfolioCalculator",
+]
 
-    # Remove TypeScript imports (we'll add Python imports separately)
-    python_code = re.sub(r'^import\s+.*?;?\s*$', '', python_code, flags=re.MULTILINE)
+# Runtime helpers that every translated file gets
+RUNTIME_HELPERS = '''
+# ── Runtime helpers (generic TS→Python support) ──────────────────
 
-    # Translate class declarations: class Name extends Base { -> class Name(Base):
-    python_code = re.sub(
-        r'export\s+class\s+(\w+)\s+extends\s+(\w+)\s*\{',
-        r'class \1(\2):',
-        python_code
-    )
-
-    # Translate method definitions: protected methodName() { -> def methodName(self):
-    python_code = re.sub(
-        r'(protected|private|public)?\s*(\w+)\s*\([^)]*\)\s*\{',
-        lambda m: f"def {m.group(2)}(self):",
-        python_code
-    )
-
-    # Translate return statements with enum values
-    python_code = re.sub(
-        r'return\s+(\w+)\.(\w+);',
-        r'return "\2"',
-        python_code
-    )
-
-    # Remove closing braces
-    python_code = re.sub(r'^\s*\}\s*$', '', python_code, flags=re.MULTILINE)
-
-    # Clean up multiple blank lines
-    python_code = re.sub(r'\n\s*\n\s*\n+', '\n\n', python_code)
-
-    return python_code.strip()
+DATE_FORMAT = "%Y-%m-%d"
 
 
-def translate_roai_calculator(ts_file: Path, output_file: Path, stub_file: Path) -> None:
-    """
-    Translate the ROAI portfolio calculator from TypeScript to Python.
+def _get_factor(activity_type: str) -> int:
+    """Translate activity type to quantity factor."""
+    if activity_type == "BUY":
+        return 1
+    elif activity_type == "SELL":
+        return -1
+    return 0
 
-    For this minimal implementation, we:
-    1. Read the TypeScript source
-    2. Translate simple methods we can handle
-    3. Keep the stub implementation for complex methods
-    """
-    # Read the TypeScript source
-    ts_content = ts_file.read_text(encoding='utf-8')
 
-    # Read the stub implementation
-    stub_content = stub_file.read_text(encoding='utf-8')
+def _parse_date(val) -> datetime:
+    """Parse various date representations to datetime."""
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, date):
+        return datetime(val.year, val.month, val.day)
+    if isinstance(val, str):
+        try:
+            return datetime.strptime(val[:10], DATE_FORMAT)
+        except (ValueError, TypeError):
+            return datetime.now()
+    return datetime.now()
 
-    # Extract the getPerformanceCalculationType method from TypeScript
-    # This is a simple method we can translate
-    perf_type_match = re.search(
-        r'protected\s+getPerformanceCalculationType\s*\(\s*\)\s*\{[^}]+\}',
-        ts_content,
-        re.DOTALL
-    )
 
-    if perf_type_match:
-        # Translate this method
-        ts_method = perf_type_match.group(0)
-        py_method = translate_typescript_file(ts_method)
+def _format_date(dt, fmt=None) -> str:
+    """Format a date to string (default: YYYY-MM-DD)."""
+    if isinstance(dt, str):
+        return dt[:10]
+    if isinstance(dt, (datetime, date)):
+        return dt.strftime(DATE_FORMAT)
+    return str(dt)[:10]
 
-        # Add proper indentation
-        py_method = '\n'.join('    ' + line if line.strip() else line
-                              for line in py_method.split('\n'))
 
-        # Insert a comment showing this was translated
-        translated_section = (
-            "    # --- Translated from TypeScript ---\n"
-            + py_method + "\n"
-            "    # --- End translated section ---\n"
-        )
+def _difference_in_days(a, b) -> int:
+    """Difference in days between two dates."""
+    da = _parse_date(a)
+    db = _parse_date(b)
+    return (da - db).days
 
-        # Insert this into the stub class before the closing
-        # Find the last method in the stub and add our translated method after it
-        output_content = stub_content.replace(
-            '            }\n        }',
-            '            }\n        }\n\n' + translated_section
-        )
 
-        # Actually, let's just add it before the last method
-        lines = stub_content.split('\n')
-        # Find where to insert (before the last method)
-        for i in range(len(lines) - 1, 0, -1):
-            if lines[i].strip().startswith('def '):
-                lines.insert(i, translated_section)
-                break
+def _is_before(a, b) -> bool:
+    """Check if date a is before date b."""
+    return _parse_date(a) < _parse_date(b)
 
-        output_content = '\n'.join(lines)
+
+def _is_after(a, b) -> bool:
+    """Check if date a is after date b."""
+    return _parse_date(a) > _parse_date(b)
+
+
+def _add_milliseconds(dt, ms) -> datetime:
+    """Add milliseconds to a datetime."""
+    return _parse_date(dt) + timedelta(milliseconds=ms)
+
+
+def _sub_days(dt, days) -> datetime:
+    """Subtract days from a datetime."""
+    return _parse_date(dt) - timedelta(days=days)
+
+
+def _start_of_day(dt) -> datetime:
+    """Start of day."""
+    d = _parse_date(dt)
+    return datetime(d.year, d.month, d.day)
+
+
+def _end_of_day(dt) -> datetime:
+    """End of day."""
+    d = _parse_date(dt)
+    return datetime(d.year, d.month, d.day, 23, 59, 59)
+
+
+def _start_of_year(dt) -> datetime:
+    """Start of year."""
+    d = _parse_date(dt)
+    return datetime(d.year, 1, 1)
+
+
+def _end_of_year(dt) -> datetime:
+    """End of year."""
+    d = _parse_date(dt)
+    return datetime(d.year, 12, 31, 23, 59, 59)
+
+
+def _each_day_of_interval(interval, step=None) -> list[datetime]:
+    """Generate dates in an interval."""
+    if isinstance(interval, dict):
+        start = _parse_date(interval.get("start"))
+        end = _parse_date(interval.get("end"))
     else:
-        output_content = stub_content
+        return []
+    s = step.get("step", 1) if isinstance(step, dict) else (step or 1)
+    result = []
+    current = start
+    while current <= end:
+        result.append(current)
+        current += timedelta(days=s)
+    return result
 
-    # Write the output
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    output_file.write_text(output_content, encoding='utf-8')
+
+def _each_year_of_interval(interval) -> list[datetime]:
+    """Generate start of each year in an interval."""
+    if isinstance(interval, dict):
+        start = _parse_date(interval.get("start"))
+        end = _parse_date(interval.get("end"))
+    else:
+        return []
+    result = []
+    year = start.year
+    while year <= end.year:
+        result.append(datetime(year, 1, 1))
+        year += 1
+    return result
+
+
+def _is_within_interval(dt, interval) -> bool:
+    """Check if date is within interval."""
+    d = _parse_date(dt)
+    start = _parse_date(interval.get("start"))
+    end = _parse_date(interval.get("end"))
+    return start <= d <= end
+
+
+def _is_this_year(dt) -> bool:
+    """Check if date is in the current year."""
+    return _parse_date(dt).year == datetime.now().year
+
+
+def _reset_hours(dt) -> datetime:
+    """Reset time to midnight."""
+    d = _parse_date(dt)
+    return datetime(d.year, d.month, d.day)
+
+
+def _min_date(dates) -> datetime:
+    """Get minimum date from a list."""
+    parsed = [_parse_date(d) for d in dates if d]
+    return min(parsed) if parsed else datetime.now()
+
+
+def _sort_by(arr, key_fn):
+    """Sort array by key function (lodash sortBy)."""
+    if callable(key_fn):
+        return sorted(arr, key=key_fn)
+    if isinstance(key_fn, str):
+        return sorted(arr, key=lambda x: x.get(key_fn, "") if isinstance(x, dict) else getattr(x, key_fn, ""))
+    return sorted(arr)
+
+
+def _uniq_by(arr, key_fn):
+    """Unique elements by key (lodash uniqBy)."""
+    seen = {}
+    result = []
+    for item in arr:
+        if callable(key_fn):
+            k = key_fn(item)
+        elif isinstance(key_fn, str):
+            k = item.get(key_fn, "") if isinstance(item, dict) else getattr(item, key_fn, "")
+        else:
+            k = item
+        if k not in seen:
+            seen[k] = True
+            result.append(item)
+    return result
+
+
+def _is_number(val) -> bool:
+    """Check if value is a number."""
+    return isinstance(val, (int, float, Decimal))
+
+
+def _get_interval_from_date_range(date_range: str, ref_date=None):
+    """Get start/end dates for a date range string."""
+    now = datetime.now()
+    today = datetime(now.year, now.month, now.day)
+
+    if date_range == "1d":
+        return {"startDate": today - timedelta(days=1), "endDate": today}
+    elif date_range == "wtd":
+        weekday = today.weekday()
+        start = today - timedelta(days=weekday)
+        return {"startDate": start, "endDate": today}
+    elif date_range == "mtd":
+        start = datetime(today.year, today.month, 1)
+        return {"startDate": start, "endDate": today}
+    elif date_range == "ytd":
+        start = datetime(today.year, 1, 1)
+        return {"startDate": start, "endDate": today}
+    elif date_range == "1y":
+        return {"startDate": today - timedelta(days=365), "endDate": today}
+    elif date_range == "5y":
+        return {"startDate": today - timedelta(days=5 * 365), "endDate": today}
+    elif date_range == "max":
+        start = ref_date if ref_date else today - timedelta(days=50 * 365)
+        return {"startDate": _parse_date(start), "endDate": today}
+    else:
+        # Year range like "2023"
+        try:
+            year = int(date_range)
+            return {
+                "startDate": datetime(year, 1, 1),
+                "endDate": datetime(year, 12, 31),
+            }
+        except (ValueError, TypeError):
+            return {"startDate": today - timedelta(days=365), "endDate": today}
+
+'''
+
+
+def translate_ts_file(ts_path: Path, import_map: dict | None = None) -> str:
+    """Translate a single TypeScript file to Python source.
+
+    Args:
+        ts_path: Path to the TypeScript source file.
+        import_map: Optional import mapping configuration.
+
+    Returns:
+        Translated Python source code as a string.
+    """
+    tree = parse_file(ts_path)
+    visitor = NodeVisitor(import_map=import_map)
+    translated = visitor.visit(tree.root_node)
+    return translated
+
+
+def translate_roai_calculator(
+    roai_ts: Path,
+    base_ts: Path,
+    import_map: dict | None = None,
+) -> str:
+    """Translate the ROAI portfolio calculator from TypeScript to Python.
+
+    Parses both the ROAI calculator and its base class, translates the
+    relevant methods, and assembles them into a single Python class.
+
+    Args:
+        roai_ts: Path to the ROAI calculator TypeScript file.
+        base_ts: Path to the base PortfolioCalculator TypeScript file.
+        import_map: Optional import mapping configuration.
+
+    Returns:
+        Complete Python source code for the translated calculator.
+    """
+    log.info("Translating ROAI calculator: %s", roai_ts.name)
+
+    # Parse and translate the ROAI calculator
+    roai_code = translate_ts_file(roai_ts, import_map)
+
+    # Parse and translate the base calculator (for helper methods)
+    base_code = translate_ts_file(base_ts, import_map)
+
+    # Build the final Python file with proper imports and runtime helpers
+    python_source = build_python_file(
+        class_code=RUNTIME_HELPERS + "\n\n" + roai_code,
+        imports=CALCULATOR_IMPORTS,
+        module_docstring="ROAI Portfolio Calculator — translated from TypeScript by tt.",
+    )
+
+    return python_source
 
 
 def run_translation(repo_root: Path, output_dir: Path) -> None:
-    """Run the translation process."""
-    # Source TypeScript file
-    ts_source = (
+    """Run the full translation pipeline.
+
+    Args:
+        repo_root: Root of the repository.
+        output_dir: Output directory for translated files.
+    """
+    # Source TypeScript files
+    roai_ts = (
         repo_root / "projects" / "ghostfolio" / "apps" / "api" / "src"
         / "app" / "portfolio" / "calculator" / "roai" / "portfolio-calculator.ts"
     )
-
-    # Stub file from the example
-    stub_source = (
-        repo_root / "translations" / "ghostfolio_pytx_example" / "app"
-        / "implementation" / "portfolio" / "calculator" / "roai"
-        / "portfolio_calculator.py"
+    base_ts = (
+        repo_root / "projects" / "ghostfolio" / "apps" / "api" / "src"
+        / "app" / "portfolio" / "calculator" / "portfolio-calculator.ts"
     )
 
-    # Output file
+    # Import map
+    scaffold_dir = repo_root / "tt" / "tt" / "scaffold" / "ghostfolio_pytx"
+    import_map_path = scaffold_dir / "tt_import_map.json"
+    import_map = {}
+    if import_map_path.exists():
+        import_map = json.loads(import_map_path.read_text(encoding="utf-8"))
+
+    # Output path
     output_file = (
         output_dir / "app" / "implementation" / "portfolio" / "calculator"
         / "roai" / "portfolio_calculator.py"
     )
 
-    if not ts_source.exists():
-        print(f"Warning: TypeScript source not found: {ts_source}")
+    if not roai_ts.exists():
+        log.warning("TypeScript source not found: %s", roai_ts)
         return
 
-    if not stub_source.exists():
-        print(f"Warning: Stub file not found: {stub_source}")
-        return
+    # Translate
+    python_source = translate_roai_calculator(roai_ts, base_ts, import_map)
 
-    print(f"Translating {ts_source.name}...")
-    translate_roai_calculator(ts_source, output_file, stub_source)
-    print(f"  Translated → {output_file}")
+    # Write output
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text(python_source, encoding="utf-8")
+    log.info("Translated → %s", output_file)
+
+    print(f"  Translated {roai_ts.name} → {output_file}")

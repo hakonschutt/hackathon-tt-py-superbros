@@ -1,0 +1,61 @@
+{
+  "@ghostfolio/api/app/portfolio/calculator/portfolio-calculator": {
+    "module": "app.wrapper.portfolio.calculator.portfolio_calculator",
+    "names": ["PortfolioCalculator"]
+  },
+  "@ghostfolio/api/app/portfolio/current-rate.service": {
+    "module": "app.wrapper.portfolio.current_rate_service",
+    "names": ["CurrentRateService"]
+  },
+  "@ghostfolio/api/helper/portfolio.helper": {
+    "inline": true,
+    "note": "getFactor is translated inline"
+  },
+  "@ghostfolio/common/helper": {
+    "inline": true,
+    "note": "DATE_FORMAT, getSum, parseDate, resetHours translated inline"
+  },
+  "@ghostfolio/common/calculation-helper": {
+    "inline": true,
+    "note": "getIntervalFromDateRange translated inline"
+  },
+  "@ghostfolio/common/config": {
+    "inline": true,
+    "note": "Constants translated inline"
+  },
+  "@ghostfolio/common/interfaces": {
+    "inline": true,
+    "note": "Type interfaces not needed in Python"
+  },
+  "@ghostfolio/common/models": {
+    "inline": true,
+    "note": "Model types not needed in Python"
+  },
+  "@ghostfolio/common/types": {
+    "inline": true,
+    "note": "Type aliases not needed in Python"
+  },
+  "@nestjs/common": {
+    "skip": true,
+    "note": "NestJS decorators/Logger not needed"
+  },
+  "@prisma/client": {
+    "skip": true,
+    "note": "Prisma types not needed"
+  },
+  "big.js": {
+    "module": "decimal",
+    "names": ["Decimal"]
+  },
+  "date-fns": {
+    "inline": true,
+    "note": "Date functions translated to Python datetime"
+  },
+  "lodash": {
+    "inline": true,
+    "note": "Utility functions translated inline"
+  },
+  "class-transformer": {
+    "skip": true
+  }
+}
