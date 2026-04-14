@@ -21,6 +21,7 @@ EXAMPLE_DIR = REPO_ROOT / "translations" / "ghostfolio_pytx_example"
 
 
 def cmd_translate(args: argparse.Namespace) -> int:
+    """Run the translation pipeline: scaffold setup then TS-to-Python translation."""
     output_dir = Path(args.output) if args.output else TRANSLATION_DIR
 
     # Step 1: Set up the scaffold (copies example + support modules)
@@ -45,6 +46,7 @@ def cmd_translate(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    """CLI entry point for the tt translation tool."""
     parser = argparse.ArgumentParser(
         prog="tt",
         description="Translation tool - copies implementation from example",
