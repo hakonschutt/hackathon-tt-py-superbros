@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-push hook: rule compliance check
+# Prevents pushing code that violates competition rules
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+echo "pre-push: checking rule compliance before push..."
+echo ""
+
+# Rule breaches
+echo "  [1/2] Rule compliance..."
+if ! make detect_rule_breaches 2>/dev/null; then
+    echo "PUSH BLOCKED: rule breaches detected. Run: make detect_rule_breaches"
+    exit 1
+fi
+
+# Lint tt/ code
+echo "  [2/2] Lint..."
+if ! uv run --project tt ruff check tt/ --quiet 2>/dev/null; then
+    echo "PUSH BLOCKED: lint errors in tt/. Run: cd tt && uv run ruff check --fix ."
+    exit 1
+fi
+
+echo ""
+echo "pre-push: all checks passed. Pushing..."

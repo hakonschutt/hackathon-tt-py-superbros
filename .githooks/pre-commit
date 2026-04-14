@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-commit hook: fast checks on staged Python files in tt/
+# Prevents committing code with lint errors or bad formatting
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Only check staged Python files in tt/ (our code, not generated output)
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep '^tt/.*\.py$' || true)
+
+if [ -z "$STAGED_PY" ]; then
+    exit 0
+fi
+
+echo "pre-commit: checking staged Python files in tt/..."
+
+# Lint check (no auto-fix — just verify)
+if ! uv run --project tt ruff check $STAGED_PY 2>/dev/null; then
+    echo ""
+    echo "COMMIT BLOCKED: ruff lint errors found."
+    echo "Run: cd tt && uv run ruff check --fix ."
+    exit 1
+fi
+
+# Format check
+if ! uv run --project tt ruff format --check $STAGED_PY 2>/dev/null; then
+    echo ""
+    echo "COMMIT BLOCKED: formatting issues found."
+    echo "Run: cd tt && uv run ruff format ."
+    exit 1
+fi
+
+echo "pre-commit: all checks passed."

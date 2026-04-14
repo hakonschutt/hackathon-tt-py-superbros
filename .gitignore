@@ -49,6 +49,15 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude Code worktrees
+.claude/worktrees/
+
+# Hackathon worktrees
+.worktrees/
+
+# Per-worktree port cache
+.port
+
 
 # Coverage
 .pyscn/reports
