@@ -296,10 +296,16 @@ def _build_get_performance() -> list[str]:
     lines.append(f'{i3}pm = p.get("netPerformancePercentageWithCurrencyEffectMap")')
     lines.append(f'{i3}if isinstance(pm, dict) and "max" in pm: nppw += pm["max"]')
 
+    # Compute netPerformancePercentage from positions
+    lines.append(f'{i2}npp = Decimal("0")')
+    lines.append(f"{i2}for p in positions:")
+    lines.append(f'{i3}pnp = p.get("netPerformancePercentage")')
+    lines.append(f"{i3}if pnp is not None: npp += pnp")
+
     perf_keys = [
         ("currentNetWorth", "cvi"), ("currentValue", "cvi"),
         ("currentValueInBaseCurrency", "cvi"),
-        ("netPerformance", "np_"), ("netPerformancePercentage", "Decimal('0')"),
+        ("netPerformance", "np_"), ("netPerformancePercentage", "float(npp)"),
         ("netPerformancePercentageWithCurrencyEffect", "nppw"),
         ("netPerformanceWithCurrencyEffect", "npw"),
         ("totalFees", "tfe"), ("totalInvestment", "tin"),
@@ -318,11 +324,25 @@ def _build_get_investments() -> list[str]:
     i = "    "
     i2 = i * 2
     i3 = i * 3
+    i4 = i * 4
 
     lines.append(f"{i}def get_investments(self, group_by: str | None = None) -> dict:")
     lines.append(f'{i2}sn = self._compute_snapshot()')
     lines.append(f'{i2}hd = sn.get("historicalData", [])')
-    lines.append(f'{i2}if not group_by or not hd: return {{"investments": []}}')
+    # When no group_by, return per-activity investment snapshots
+    lines.append(f"{i2}if not group_by:")
+    lines.append(f"{i3}sa = self.sorted_activities()")
+    lines.append(f"{i3}inv = []")
+    lines.append(f'{i3}acc = Decimal("0")')
+    lines.append(f"{i3}for a in sa:")
+    lines.append(f'{i4}t = a.get("type", "")')
+    lines.append(f'{i4}q = to_decimal(a.get("quantity", 0))')
+    lines.append(f'{i4}p = to_decimal(a.get("unitPrice", 0))')
+    lines.append(f'{i4}f = get_factor(t)')
+    lines.append(f"{i4}if f != 0: acc += q * p * f")
+    lines.append(f'{i4}inv.append({{"date": a.get("date", ""), "investment": float(acc)}})')
+    lines.append(f'{i3}return {{"investments": inv}}')
+    lines.append(f'{i2}if not hd: return {{"investments": []}}')
     lines.append(f"{i2}gd = {{}}")
     lines.append(f"{i2}for h in hd:")
     lines.append(f'{i3}dt = h.get("date", "")')
