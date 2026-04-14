@@ -74,6 +74,13 @@ LODASH_MAP: dict[str, str] = {
     "sum": "sum",
 }
 
+# Helper function translations (camelCase → snake_case)
+HELPER_FN_MAP: dict[str, str] = {
+    "getFactor": "get_factor",
+    "getIntervalFromDateRange": "get_interval_from_date_range",
+    "getSum": "sum",
+}
+
 
 class NodeVisitor:
     """Translates tree-sitter TypeScript AST nodes to Python source code."""
@@ -891,7 +898,7 @@ class NodeVisitor:
         text = re.sub(r'new Big\((\d+)\)', r'Decimal("\1")', text)
         text = re.sub(r'new Big\(([^)]+)\)', r'Decimal(str(\1))', text)
         text = re.sub(r'new Date\(\)', 'datetime.now()', text)
-        text = re.sub(r'new Date\(([^)]+)\)', r'_parse_date(\1)', text)
+        text = re.sub(r'new Date\(([^)]+)\)', r'parse_date(\1)', text)
         # Remove type assertions
         text = re.sub(r'\s+as\s+\w+[\[\]<>,\s\w]*', '', text)
         # Collapse whitespace
@@ -1183,6 +1190,11 @@ class NodeVisitor:
             if func == ts_fn or func.endswith(f".{ts_fn}"):
                 return f"{py_fn}({', '.join(args)})"
 
+        # Helper functions (camelCase → snake_case)
+        for ts_fn, py_fn in HELPER_FN_MAP.items():
+            if func == ts_fn or func.endswith(f".{ts_fn}"):
+                return f"{py_fn}({', '.join(args)})"
+
         # Array.from, Object.keys, etc.
         if func == "Array.from":
             return f"list({', '.join(args)})"
@@ -1344,7 +1356,7 @@ class NodeVisitor:
         if cons_text == "Date":
             if not args:
                 return "datetime.now()"
-            return f"_parse_date({args[0]})"
+            return f"parse_date({args[0]})"
 
         # new Set() → set()
         if cons_text == "Set":
@@ -1458,7 +1470,7 @@ class NodeVisitor:
                     key_text = f'"{key_text}"'
                 value_text = self._translate_expression(value)
                 pairs.append(f"{key_text}: {value_text}")
-            elif child.type == "shorthand_property":
+            elif child.type in ("shorthand_property", "shorthand_property_identifier"):
                 name = get_node_text(child)
                 pairs.append(f'"{name}": {name}')
             elif child.type == "spread_element":
@@ -1466,6 +1478,11 @@ class NodeVisitor:
                     if c.type != "...":
                         expr = self._translate_expression(c)
                         pairs.append(f"**{expr}")
+            elif child.type == "method_definition":
+                # Inline method in object literal — skip for now
+                pass
+            elif child.type == "comment":
+                pass
         return "{" + ", ".join(pairs) + "}"
 
     def _expr_array(self, node: Node) -> str:

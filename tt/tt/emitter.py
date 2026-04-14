@@ -49,6 +49,7 @@ def build_python_file(
 
     # Post-processing: fix common issues
     result = _convert_attribute_to_dict_access(result)
+    result = _fix_broken_lambdas(result)
     result = _fix_empty_bodies(result)
     result = _fix_indentation(result)
     result = _collapse_blank_lines(result)
@@ -66,7 +67,35 @@ def _convert_attribute_to_dict_access(code: str) -> str:
     In translated code, TS object property access (obj.prop) becomes
     Python dict access. Assignment targets use obj["prop"] = val,
     while reads use obj.get("prop").
+
+    Also flattens TS nested patterns like SymbolProfile.symbol → "symbol".
     """
+    # First pass: flatten SymbolProfile access
+    # TS pattern: item.SymbolProfile.symbol → item.get("symbol")
+    # TS pattern: item.SymbolProfile.dataSource → item.get("dataSource")
+    # TS pattern: item.SymbolProfile.assetSubClass → item.get("assetSubClass")
+    # TS pattern: item.SymbolProfile.currency → item.get("currency")
+    code = re.sub(
+        r'(\w+)\.get\("SymbolProfile"\)\.(\w+)',
+        lambda m: f'{m.group(1)}.get("{m.group(2)}")',
+        code
+    )
+    code = re.sub(
+        r'(\w+)\["SymbolProfile"\]\.(\w+)',
+        lambda m: f'{m.group(1)}.get("{m.group(2)}")',
+        code
+    )
+    # Direct nested: obj.SymbolProfile.symbol (including subscript access like orders[0].SymbolProfile)
+    code = re.sub(
+        r'([\w\]\)]+)\.SymbolProfile\.(\w+)',
+        lambda m: f'{m.group(1)}.get("{m.group(2)}")',
+        code
+    )
+    # Also handle SymbolProfile as a standalone dict in object literals
+    # Keep SymbolProfile in dict literals as-is (they're constructing synthetic orders)
+    # obj.get("SymbolProfile") alone (without further access) → just obj
+    # This handles cases like: { "SymbolProfile": {...} } patterns
+
     dict_props = {
         "feeInBaseCurrency", "feeInBaseCurrencyWithCurrencyEffect",
         "valueInBaseCurrency", "investment", "investmentWithCurrencyEffect",
@@ -75,7 +104,7 @@ def _convert_attribute_to_dict_access(code: str) -> str:
         "timeWeightedInvestmentWithCurrencyEffect",
         "includeInTotalAssetValue", "unitPrice", "unitPriceFromMarketData",
         "unitPriceInBaseCurrency", "unitPriceInBaseCurrencyWithCurrencyEffect",
-        "SymbolProfile", "itemType", "assetSubClass", "currency",
+        "itemType", "assetSubClass", "currency",
         "dataSource", "date", "fee", "type", "symbol", "tags",
         "userId", "skipErrors", "activitiesCount", "averagePrice",
         "dateOfFirstActivity", "includeInHoldings",
@@ -112,6 +141,24 @@ def _convert_attribute_to_dict_access(code: str) -> str:
                 )
         result.append(modified)
     return "\n".join(result)
+
+
+def _fix_broken_lambdas(code: str) -> str:
+    """Fix lambdas that reference undefined variables from TS closures.
+
+    The translator sometimes produces broken lambdas from TS arrow functions
+    with block bodies. This fixes known patterns by replacing them with
+    correct Python equivalents.
+    """
+    # Fix: sort_by(orders, lambda _item: sortIndex.getTime())
+    # The TS sorts orders by date with +-1ms adjustment for start/end items
+    # Replace with proper Python sort key
+    code = re.sub(
+        r'sort_by\((\w+),\s*lambda\s+\w+:\s*sortIndex\.getTime\(\)\)',
+        r'sorted(\1, key=lambda o: (o.get("date", ""), {"start": -1, "end": 1}.get(o.get("itemType", ""), 0)))',
+        code,
+    )
+    return code
 
 
 def _fix_empty_bodies(code: str) -> str:
