@@ -172,6 +172,43 @@ def _fix_nullish_subscript(code: str) -> str:
         lambda m: f'{m.group(1)}[{m.group(2)}] = {m.group(1)}.get({m.group(2)}, {m.group(3)})',
         code,
     )
+    # Fix: len(X[Y]) if X[Y] is not None → len(X.get(Y, []))
+    code = re.sub(
+        r'len\((\w+)\[([^\]]+)\]\) if \1\[\2\] is not None else (\d+)',
+        lambda m: f'len({m.group(1)}.get({m.group(2)}, []))',
+        code,
+    )
+    # Fix: X[Y] if X[Y] is not None (without else, standalone)
+    # Generally make dict access safe by converting X[Y] → X.get(Y)
+    # where X is a known dict variable (ordersByDate, marketSymbolMap, etc.)
+    dict_vars = ["ordersByDate", "marketSymbolMap", "exchangeRates",
+                 "investmentValuesAccumulatedWithCurrencyEffect",
+                 "investmentValuesWithCurrencyEffect",
+                 "currentValuesWithCurrencyEffect",
+                 "netPerformanceValuesWithCurrencyEffect",
+                 "accountBalanceItemsMap", "accountBalanceMap"]
+    for var in dict_vars:
+        # X[key] where X might not have key → X.get(key)
+        # But NOT on assignment left side
+        lines = code.split("\n")
+        new_lines = []
+        for line in lines:
+            if f"{var}[" in line:
+                stripped = line.strip()
+                # Skip assignment targets: var[key] = ...
+                if re.match(rf'^\s*{var}\[', stripped) and '=' in stripped:
+                    left_part = stripped.split('=')[0].rstrip()
+                    if left_part.endswith(']'):
+                        new_lines.append(line)
+                        continue
+                # Replace reads: var[key] → var.get(key)
+                line = re.sub(
+                    rf'{var}\[([^\]]+)\]',
+                    rf'{var}.get(\1)',
+                    line,
+                )
+            new_lines.append(line)
+        code = "\n".join(new_lines)
     return code
 
 

@@ -131,7 +131,8 @@ def _build_compute_snapshot() -> list[str]:
     lines.append(f"{i4}    end=parse_date(end_date), exchangeRates=exchange_rates,")
     lines.append(f"{i4}    marketSymbolMap=market_symbol_map, start=parse_date(start_date),")
     lines.append(f"{i4}    symbol=sym)")
-    lines.append(f"{i3}except Exception:")
+    lines.append(f"{i3}except Exception as _exc:")
+    lines.append(f"{i4}import traceback; traceback.print_exc()")
     lines.append(f"{i4}metrics = {{}}")
     lines.append("")
 
