@@ -1,75 +1,90 @@
-"""Date utility functions — Python equivalents of date-fns."""
+"""Date utility functions -- Python equivalents of date-fns.
+
+Provides thin wrappers around :mod:`datetime` that mirror the API surface
+of the JavaScript ``date-fns`` library used by the original TypeScript
+codebase.  Each function accepts either a :class:`date`, :class:`datetime`,
+or an ISO-8601 date string for maximum interoperability.
+"""
+
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-
-def parse_date(date_str: str | date | datetime) -> date:
-    """Parse an ISO date string to a date object."""
-    if isinstance(date_str, datetime):
-        return date_str.date()
-    if isinstance(date_str, date):
-        return date_str
-    return date.fromisoformat(str(date_str)[:10])
+# Re-usable type alias for all public signatures.
+DateLike = str | date | datetime
 
 
-def format_date(d: date | datetime, fmt: str = "%Y-%m-%d") -> str:
-    """Format a date as a string."""
-    if isinstance(d, datetime):
-        d = d.date()
-    return d.strftime(fmt)
+def parse_date(value: DateLike) -> date:
+    """Coerce *value* to a :class:`date`.
+
+    Accepts :class:`datetime`, :class:`date`, or an ISO-8601 string
+    (only the first ten characters are used).
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
 
 
-def difference_in_days(date_a: date | str, date_b: date | str) -> int:
-    """Return number of days between date_a and date_b (a - b)."""
+def format_date(d: DateLike, fmt: str = "%Y-%m-%d") -> str:
+    """Format *d* as a string using :func:`strftime`."""
+    return parse_date(d).strftime(fmt)
+
+
+def difference_in_days(date_a: DateLike, date_b: DateLike) -> int:
+    """Return the signed number of days between *date_a* and *date_b*."""
     return (parse_date(date_a) - parse_date(date_b)).days
 
 
-def is_before(date_a: date | str, date_b: date | str) -> bool:
-    """Check if date_a is before date_b."""
+def is_before(date_a: DateLike, date_b: DateLike) -> bool:
+    """Return ``True`` if *date_a* is strictly before *date_b*."""
     return parse_date(date_a) < parse_date(date_b)
 
 
-def is_after(date_a: date | str, date_b: date | str) -> bool:
-    """Check if date_a is after date_b."""
+def is_after(date_a: DateLike, date_b: DateLike) -> bool:
+    """Return ``True`` if *date_a* is strictly after *date_b*."""
     return parse_date(date_a) > parse_date(date_b)
 
 
-def is_this_year(d: date | str) -> bool:
-    """Check if the date is in the current year."""
+def is_this_year(d: DateLike) -> bool:
+    """Return ``True`` if *d* falls in the current calendar year."""
     return parse_date(d).year == date.today().year
 
 
-def start_of_year(d: date | str) -> date:
-    """Return January 1st of the given date's year."""
+def start_of_year(d: DateLike) -> date:
+    """Return January 1st of the year containing *d*."""
     return date(parse_date(d).year, 1, 1)
 
 
-def end_of_year(d: date | str) -> date:
-    """Return December 31st of the given date's year."""
+def end_of_year(d: DateLike) -> date:
+    """Return December 31st of the year containing *d*."""
     return date(parse_date(d).year, 12, 31)
 
 
-def start_of_month(d: date | str) -> date:
-    """Return the 1st of the given date's month."""
+def start_of_month(d: DateLike) -> date:
+    """Return the first day of the month containing *d*."""
     parsed = parse_date(d)
     return date(parsed.year, parsed.month, 1)
 
 
-def start_of_week(d: date | str, week_starts_on: int = 1) -> date:
-    """Return the start of the week (default Monday=1)."""
+def start_of_week(d: DateLike, week_starts_on: int = 1) -> date:
+    """Return the start of the ISO week containing *d*.
+
+    *week_starts_on* follows the ``date-fns`` convention where 1 = Monday.
+    """
     parsed = parse_date(d)
-    days_since_start = (parsed.weekday() - (week_starts_on - 1)) % 7
-    return parsed - timedelta(days=days_since_start)
+    offset = (parsed.weekday() - (week_starts_on - 1)) % 7
+    return parsed - timedelta(days=offset)
 
 
-def sub_days(d: date | str, n: int) -> date:
-    """Subtract n days from a date."""
+def sub_days(d: DateLike, n: int) -> date:
+    """Return the date *n* days before *d*."""
     return parse_date(d) - timedelta(days=n)
 
 
-def sub_years(d: date | str, n: int) -> date:
-    """Subtract n years from a date."""
+def sub_years(d: DateLike, n: int) -> date:
+    """Return the date *n* years before *d*, clamping Feb 29 to Feb 28."""
     parsed = parse_date(d)
     try:
         return parsed.replace(year=parsed.year - n)
@@ -77,22 +92,52 @@ def sub_years(d: date | str, n: int) -> date:
         return parsed.replace(year=parsed.year - n, day=28)
 
 
-def each_day_of_interval(
-    start: date | str, end: date | str, step: int = 1
-) -> list[date]:
-    """Generate dates from start to end (inclusive) with given step."""
-    s = parse_date(start)
-    e = parse_date(end)
-    result: list[date] = []
-    current = s
-    while current <= e:
-        result.append(current)
-        current += timedelta(days=step)
-    return result
+def each_day_of_interval(start: DateLike, end: DateLike, step: int = 1) -> list[date]:
+    """Return every *step*-th date from *start* to *end* (inclusive)."""
+    first = parse_date(start)
+    last = parse_date(end)
+    delta = timedelta(days=step)
+    days: list[date] = []
+    current = first
+    while current <= last:
+        days.append(current)
+        current += delta
+    return days
 
 
-def each_year_of_interval(start: date | str, end: date | str) -> list[date]:
-    """Generate Jan 1st of each year from start's year to end's year."""
-    s = parse_date(start)
-    e = parse_date(end)
-    return [date(y, 1, 1) for y in range(s.year, e.year + 1)]
+def each_year_of_interval(start: DateLike, end: DateLike) -> list[date]:
+    """Return January 1st of each year spanning *start* to *end*."""
+    s_year = parse_date(start).year
+    e_year = parse_date(end).year
+    return [date(y, 1, 1) for y in range(s_year, e_year + 1)]
+
+
+def add_milliseconds(d: DateLike, ms: int) -> date:
+    """Add milliseconds to a date (used for sort tiebreaking)."""
+    return parse_date(d)  # date has no time component; effectively a no-op for dates
+
+
+def start_of_day(d: DateLike) -> date:
+    """Return the date with time set to midnight (date-only: identity)."""
+    return parse_date(d)
+
+
+def end_of_day(d: DateLike) -> date:
+    """Return the date with time set to end of day (date-only: identity)."""
+    return parse_date(d)
+
+
+def is_within_interval(d: DateLike, start: DateLike, end: DateLike) -> bool:
+    """Check if date is within the interval [start, end] inclusive."""
+    parsed = parse_date(d)
+    return parse_date(start) <= parsed <= parse_date(end)
+
+
+def min_date(dates: list[date]) -> date | None:
+    """Return the earliest date, or None if empty."""
+    return min(dates) if dates else None
+
+
+def max_date(dates: list[date]) -> date | None:
+    """Return the latest date, or None if empty."""
+    return max(dates) if dates else None

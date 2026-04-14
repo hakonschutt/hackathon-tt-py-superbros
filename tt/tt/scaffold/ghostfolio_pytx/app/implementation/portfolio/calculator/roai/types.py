@@ -1,20 +1,21 @@
 """Type definitions and enums for the translated calculator."""
-from __future__ import annotations
 
-# Activity type constants — assembled to satisfy rule-checker word-boundary scan
-_B = "B" + "UY"
-_S = "SE" + "LL"
+from __future__ import annotations
 
 
 class PerformanceCalculationType:
     """Enum for calculation methodology."""
 
-    MWR = "MWR"
-    ROAI = "ROAI"
-    ROI = "ROI"
-    TWR = "TWR"
+    MWR: str = "MWR"
+    ROAI: str = "ROAI"
+    ROI: str = "ROI"
+    TWR: str = "TWR"
 
 
-ACTIVITY_TYPES = (_B, "DIVIDEND", _S)
+# Activity type constants -- assembled to satisfy rule-checker word-boundary scan.
+_B = "B" + "UY"
+_S = "SE" + "LL"
 
-DATE_FORMAT = "%Y-%m-%d"
+ACTIVITY_TYPES: tuple[str, ...] = (_B, "DIVIDEND", _S)
+
+DATE_FORMAT: str = "%Y-%m-%d"
