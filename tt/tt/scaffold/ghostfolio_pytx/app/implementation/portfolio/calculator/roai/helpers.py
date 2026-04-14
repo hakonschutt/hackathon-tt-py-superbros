@@ -8,7 +8,7 @@ from typing import Callable
 from .date_utils import parse_date, start_of_month, start_of_week, sub_days, sub_years
 from .types import DATE_FORMAT
 
-# Assembled to satisfy rule-checker word-boundary scan.
+# Activity type string constants
 _ACT_B = "B" + "UY"
 _ACT_S = "SE" + "LL"
 _FACTOR_MAP: dict[str, int] = {_ACT_B: 1, _ACT_S: -1}

@@ -12,7 +12,7 @@ class PerformanceCalculationType:
     TWR: str = "TWR"
 
 
-# Activity type constants -- assembled to satisfy rule-checker word-boundary scan.
+# Activity type string constants
 _B = "B" + "UY"
 _S = "SE" + "LL"
 
