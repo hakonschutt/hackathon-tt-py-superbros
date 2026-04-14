@@ -2,8 +2,8 @@
 
 ## Team: 2 people — both orchestrators with Claude Code agents
 
-- **Person A — Calculator Core**: Translates performance math, chart generation, market values. See [`docs/PERSON-A.md`](docs/PERSON-A.md)
-- **Person B — Endpoints & Aggregation**: Translates investment grouping, dividends, details, report, quality. See [`docs/PERSON-B.md`](docs/PERSON-B.md)
+- **Person A — Translator**: Builds the tree-sitter TS→Python translator pipeline. See [`docs/PERSON-A.md`](docs/PERSON-A.md)
+- **Person B — Quality**: Scaffold support, import mappings, test analysis, code quality, SOLUTION.md. See [`docs/PERSON-B.md`](docs/PERSON-B.md)
 - **Coordination protocol**: [`docs/COORDINATION.md`](docs/COORDINATION.md)
 
 Both run Claude Code with agents. Both dispatch solver agents into worktrees.

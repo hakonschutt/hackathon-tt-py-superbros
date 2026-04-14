@@ -1,134 +1,185 @@
-# Person A: Calculator Core & Performance Math
+# Person A: Build the Translator
 
 ## Your Mission
 
-Make the translated `RoaiPortfolioCalculator` compute correct numbers. You own the core calculation pipeline — the loop that processes activities and produces performance metrics, chart data, and holdings values.
+Build the tree-sitter based TypeScript-to-Python translator. The entire `tt/tt/` pipeline — parsing, AST walking, transforming, emitting Python. Your goal: maximize the number of API tests that pass.
 
-## Your Test Files (measure progress here)
+## Architecture
 
-| File | Tests | What they need |
-|------|-------|----------------|
-| `test_advanced.py` | 10 | Open position P&L, partial sell, chart entries, market prices |
-| `test_deeper.py` | 7 | Closed position P&L with fees, dividend + market price, TWI |
-| `test_novn_buy_and_sell.py` | 7 | Full buy/sell lifecycle, realized P&L, TWI percentage |
-| `test_same_day_transactions.py` | 5 | Same-day BUY+SELL, EPSILON guard, finite percentage |
-| `test_short_cover.py` | 6 | Short position open/cover, short profit |
-| `test_msft_fractional.py` | 5 | Fractional shares, weighted avg cost, exact closure |
-
-**~40 tests to capture.** Run just your tests with:
-
-```bash
-make spinup-and-test-ghostfolio_pytx PYTEST_ARGS="-k 'test_advanced or test_deeper or test_novn or test_same_day or test_short_cover or test_msft_fractional'"
+```
+.ts source files
+     ↓
+tree-sitter (Python bindings) → typed syntax tree
+     ↓
+Visitor/Transformer (Python) → walks the tree, maps TS constructs to Python
+     ↓
+Python code emitter → formatted .py files
+     ↓
+translations/ghostfolio_pytx/app/implementation/
 ```
 
-Or run the full suite to see overall progress:
+## Module Structure to Build
+
+```
+tt/tt/
+├── translator.py              # Pipeline orchestration: parse → transform → emit
+├── parser.py                  # tree-sitter setup, parse TS → AST
+├── visitor.py                 # AST walker, dispatches to transform handlers
+├── emitter.py                 # Python code builder (indentation, imports, formatting)
+├── transformers/
+│   ├── types.py               # string→str, number→float, Array<T>→List[T], etc.
+│   ├── classes.py             # class, extends, constructor → __init__, this→self
+│   ├── functions.py           # methods, arrow functions, async/await
+│   ├── interfaces.py          # interface → @dataclass
+│   ├── enums.py               # enum → Python Enum
+│   ├── imports.py             # import/export → Python imports
+│   ├── expressions.py         # ?., ??, ternary, template literals, spread
+│   └── control_flow.py        # if/else, for..of, switch, try/catch
+└── runtime/
+    └── helpers.py             # Small runtime shims for translated code
+```
+
+## Implementation Order
+
+### Step 1: tree-sitter setup + parse verification
+
+```bash
+cd tt && uv add tree-sitter tree-sitter-typescript
+```
+
+Build `parser.py`:
+- Initialize tree-sitter with TypeScript grammar
+- `parse_file(path) → Tree`
+- Verify on the main calculator file:
+  ```
+  projects/ghostfolio/apps/api/src/app/portfolio/calculator/roai/portfolio-calculator.ts
+  ```
+
+**Commit.**
+
+### Step 2: Type mappings
+
+```
+TypeScript          → Python
+string              → str
+number              → float
+boolean             → bool
+any                 → Any
+void                → None
+null/undefined      → None
+Array<T>            → List[T]
+Record<K,V>         → Dict[K, V]
+Promise<T>          → T (unwrap)
+T | null            → Optional[T]
+Date                → datetime
+Big                 → Decimal
+```
+
+**Commit.**
+
+### Step 3: Class + method translation
+
+```
+export class Foo extends Bar {    →    class Foo(Bar):
+  private x: number;              →        # field absorbed into __init__
+  constructor(private svc: X) {   →        def __init__(self, svc: X):
+    super();                      →            super().__init__()
+    this.x = 0                    →            self.x = 0
+  }
+  protected calc(): number {      →        def calc(self) -> float:
+    return this.x * 2;            →            return self.x * 2
+  }
+}
+```
+
+**Commit.**
+
+### Step 4: Imports, enums, interfaces
+
+```
+import { Foo } from './bar';      →    from .bar import Foo
+enum Color { Red = 'RED' }        →    class Color(str, Enum): Red = 'RED'
+interface Pos { symbol: string }   →    @dataclass\nclass Pos: symbol: str
+```
+
+**Commit.**
+
+### Step 5: Expressions + control flow
+
+```
+x?.foo          →    x.foo if x is not None else None
+x ?? default    →    x if x is not None else default
+cond ? a : b    →    a if cond else b
+`hi ${name}`    →    f"hi {name}"
+for (x of arr)  →    for x in arr:
+switch/case     →    if/elif/else
+```
+
+**Commit.**
+
+### Step 6: Emitter + pipeline wiring
+
+Assemble translated fragments into valid Python files with:
+- Correct indentation
+- Sorted/deduplicated imports
+- `pass` in empty bodies
+- Trailing newline
+
+Wire into `translator.py` so `uv run --project tt tt translate` runs the full pipeline.
+
+**Commit.**
+
+### Step 7: Iterate on test results
 
 ```bash
 make evaluate_tt_ghostfolio
 ```
 
-## What to Translate
+Read failures → identify untranslated TS pattern → add/fix transformer → rerun. **Commit after each fix.**
 
-The main TypeScript source is the ROAI calculator:
+## Key TypeScript Files to Translate
 
 ```
+# Main calculator (most important)
 projects/ghostfolio/apps/api/src/app/portfolio/calculator/roai/portfolio-calculator.ts
-```
 
-With base class logic in:
-
-```
+# Base class
 projects/ghostfolio/apps/api/src/app/portfolio/calculator/portfolio-calculator.ts
+
+# Types and interfaces
+projects/ghostfolio/libs/common/src/lib/interfaces/
 ```
 
-### Priority order (each unlocks the next)
+## tree-sitter Tips
 
-**1. Transaction processing loop** (unlocks everything)
-- Translate the main loop that iterates activities and builds `TransactionPoint` entries
-- Track: quantity, investment, average cost per symbol
-- Handle BUY (add to position), SELL (reduce position, record realized P&L)
+Common AST node types you'll encounter:
+- `class_declaration`, `class_heritage`
+- `method_definition`, `public_field_definition`
+- `function_declaration`, `arrow_function`
+- `if_statement`, `for_in_statement`, `switch_statement`
+- `call_expression`, `member_expression`, `optional_chain_expression`
+- `ternary_expression`, `template_string`
+- `type_annotation`, `generic_type`, `union_type`
 
-**2. Performance calculation** (unlocks test_novn, test_deeper, test_same_day)
-- `netPerformance` = realized gains + unrealized gains - fees
-- `grossPerformance` = same but without fees
-- Time-Weighted Investment (TWI) as denominator for percentage
-- `netPerformancePercentage` = netPerformance / TWI
-- **EPSILON guard**: when buy and sell are same day, `differenceInDays = 0` — use `Number.EPSILON` equivalent to avoid division by zero
-
-**3. Market value integration** (unlocks test_advanced holding/market tests)
-- Use `self.current_rate_service.get_latest_price(symbol)` for current value
-- `currentValueInBaseCurrency` = quantity * currentMarketPrice
-- Unrealized P&L = currentValue - investment - fees
-
-**4. Chart generation** (unlocks test_advanced chart tests, helps Person B's btcusd chart tests)
-- Generate daily entries between first activity and today
-- Each entry: `{ date, netPerformance, investmentValueWithCurrencyEffect }`
-- Use `current_rate_service.get_nearest_price(symbol, date)` for historical values
-
-**5. Edge cases** (unlocks test_short_cover, test_msft_fractional)
-- Short positions: SELL before BUY = negative position, cover via BUY
-- Fractional quantities: use Decimal or high-precision float
-- Partial sells: average cost basis, combined realized + unrealized P&L
-
-## Key Formulas from TypeScript
-
+Dump any file's AST:
+```python
+tree = parser.parse_file("path/to/file.ts")
+print(tree.root_node.sexp())
 ```
-// Realized P&L on a SELL
-realizedProfit = (sellPrice - avgCostBasis) * sellQuantity
-
-// TWI (Time-Weighted Investment) — the denominator for percentage
-// Each buy adds: quantity * unitPrice * (totalDays - daysFromStart) / totalDays
-// This weights earlier investments more heavily
-timeWeightedInvestment += quantity * unitPrice * timeWeight
-
-// Net performance percentage
-netPerformancePercentage = netPerformance / timeWeightedInvestment
-
-// Same-day guard (differenceInDays = 0)
-timeWeight = max(differenceInDays, Number.EPSILON) / totalDays
-```
-
-## Scaffold Integration Points
-
-Your translated code writes to:
-```
-translations/ghostfolio_pytx/app/implementation/portfolio/calculator/roai/portfolio_calculator.py
-```
-
-The calculator class must:
-- Extend `PortfolioCalculator` (the abstract base in `app/wrapper/`)
-- Accept `activities` and `current_rate_service` in `__init__`
-- Implement `get_performance()` returning chart + performance dict
-- Implement `get_holdings()` returning per-symbol holdings
-
-Person B handles `get_investments()`, `get_dividends()`, `get_details()`, `evaluate_report()` — but your calculation results feed into theirs, so getting the core loop right is the highest-leverage thing you can do.
 
 ## Workflow
 
 ```bash
-# 1. Start your worktree
-scripts/new-task.sh calc "Core calculator translation"
-cd .worktrees/calc
-
-# 2. Launch Claude Code
-claude
-
-# 3. Iterate
-#    - Edit tt/tt/translator.py (or add modules in tt/tt/)
-#    - uv run --project tt tt translate
-#    - make spinup-and-test-ghostfolio_pytx
-#    - Commit on progress
-
-# 4. When ready to merge
-#    - Commit all changes
-#    - Go to main repo: cd /path/to/hackathon-tt-py-superbros
-#    - scripts/merge.sh calc
-#    - make evaluate_tt_ghostfolio
+scripts/new-task.sh translator "Build tree-sitter TS→Python translator"
+cd .worktrees/translator && claude
 ```
 
-## Coordination with Person B
+Iterate: edit → `uv run --project tt tt translate` → `make spinup-and-test-ghostfolio_pytx` → commit.
 
-- You both modify `tt/tt/` — use separate files/modules where possible
-- If you must both touch `translator.py`, keep changes in separate functions
-- Merge frequently (every 15-20 min) to avoid painful conflicts
-- Your core loop results feed Person B's endpoints — the sooner your math works, the sooner their aggregation tests pass too
+## Rules
+
+- NO LLMs in the translation pipeline
+- NO hardcoded ghostfolio logic — the translator must genuinely translate TS constructs
+- Use `tt_import_map.json` in scaffold for project-specific import mappings
+- Wrapper files are immutable — only write to `app/implementation/`
+- `make detect_rule_breaches` before every commit
