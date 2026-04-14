@@ -46,31 +46,31 @@ BIG_METHOD_MAP: dict[str, str] = {
 
 # date-fns function translations
 DATE_FN_MAP: dict[str, str] = {
-    "differenceInDays": "_difference_in_days",
-    "isBefore": "_is_before",
-    "isAfter": "_is_after",
-    "format": "_format_date",
-    "addMilliseconds": "_add_milliseconds",
-    "startOfDay": "_start_of_day",
-    "endOfDay": "_end_of_day",
-    "startOfYear": "_start_of_year",
-    "endOfYear": "_end_of_year",
-    "eachDayOfInterval": "_each_day_of_interval",
-    "eachYearOfInterval": "_each_year_of_interval",
-    "isWithinInterval": "_is_within_interval",
-    "isThisYear": "_is_this_year",
-    "subDays": "_sub_days",
-    "min": "_min_date",
-    "parseDate": "_parse_date",
-    "resetHours": "_reset_hours",
+    "differenceInDays": "difference_in_days",
+    "isBefore": "is_before",
+    "isAfter": "is_after",
+    "format": "format_date",
+    "addMilliseconds": "add_milliseconds",
+    "startOfDay": "start_of_day",
+    "endOfDay": "end_of_day",
+    "startOfYear": "start_of_year",
+    "endOfYear": "end_of_year",
+    "eachDayOfInterval": "each_day_of_interval",
+    "eachYearOfInterval": "each_year_of_interval",
+    "isWithinInterval": "is_within_interval",
+    "isThisYear": "is_this_year",
+    "subDays": "sub_days",
+    "min": "min_date",
+    "parseDate": "parse_date",
+    "resetHours": "reset_hours",
 }
 
 # lodash function translations
 LODASH_MAP: dict[str, str] = {
     "cloneDeep": "copy.deepcopy",
-    "sortBy": "_sort_by",
-    "uniqBy": "_uniq_by",
-    "isNumber": "_is_number",
+    "sortBy": "sort_by",
+    "uniqBy": "uniq_by",
+    "isNumber": "is_number",
     "sum": "sum",
 }
 
