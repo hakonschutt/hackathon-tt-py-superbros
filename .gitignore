@@ -92,3 +92,5 @@ translations/ghostfolio_pytx/
 **/pnpm-lock.yaml
 **/yarn.lock
 **/package-lock.json
+
+launch-claude.sh
