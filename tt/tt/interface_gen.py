@@ -101,6 +101,15 @@ def _build_compute_snapshot() -> list[str]:
     lines.append(f"{i2}all_dates.discard('')")
     lines.append(f"{i2}all_dates.add(start_date)")
     lines.append(f"{i2}all_dates.add(end_date)")
+    # Add day before first activity (required for chart)
+    lines.append(f"{i2}fd = parse_date(first_date)")
+    lines.append(f"{i2}all_dates.add((fd - timedelta(days=1)).strftime(DATE_FORMAT))")
+    # Add year boundaries
+    lines.append(f"{i2}sy = fd.year")
+    lines.append(f"{i2}ey = parse_date(today).year")
+    lines.append(f"{i2}for yr in range(sy, ey + 1):")
+    lines.append(f'{i3}all_dates.add(f"{{yr}}-01-01")')
+    lines.append(f'{i3}all_dates.add(f"{{yr}}-12-31")')
     lines.append(f"{i2}chart_date_map = " + "{d: True for d in sorted(all_dates) if d}")
     lines.append("")
 
