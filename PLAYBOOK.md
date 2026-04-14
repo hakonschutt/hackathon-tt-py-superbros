@@ -1,10 +1,12 @@
 # Competition Day Playbook — Superbros TT
 
-## Team: 2 people
-- **Person A (Orchestrator)**: Reads requirements, plans translation strategy, directs agents, reviews output
-- **Person B (Executor)**: Runs parallel Claude instances, handles integration, monitors test results
+## Team: 2 people — both orchestrators with Claude Code agents
 
-Both run Claude Code. Both can have multiple terminal tabs.
+- **Person A — Calculator Core**: Translates performance math, chart generation, market values. See [`docs/PERSON-A.md`](docs/PERSON-A.md)
+- **Person B — Endpoints & Aggregation**: Translates investment grouping, dividends, details, report, quality. See [`docs/PERSON-B.md`](docs/PERSON-B.md)
+- **Coordination protocol**: [`docs/COORDINATION.md`](docs/COORDINATION.md)
+
+Both run Claude Code with agents. Both dispatch solver agents into worktrees.
 
 ---
 

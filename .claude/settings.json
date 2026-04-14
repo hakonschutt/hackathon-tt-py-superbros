@@ -28,7 +28,15 @@
         "hooks": [
           {
             "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -qE 'git\\s+commit'; then cd $PROJECT_DIR && make detect_rule_breaches 2>&1 | tail -5; fi; exit 0"
+          },
+          {
+            "type": "command",
             "command": "if echo \"$TOOL_INPUT\" | grep -qE 'git\\s+push'; then echo 'NOTICE: pre-push hook will run rule compliance + lint checks.'; fi; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -qE 'scripts/merge\\.sh'; then echo 'POST-MERGE: Run make evaluate_tt_ghostfolio to check test count.'; fi; exit 0"
           }
         ]
       }
