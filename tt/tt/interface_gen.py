@@ -368,6 +368,8 @@ def _build_get_holdings() -> list[str]:
         lines.append(f'{i3}h["{k}"] = float(p.get("{k}") or 0)')
     lines.append(f'{i3}h["marketPrice"] = p.get("marketPrice", 0)')
     lines.append(f'{i3}h["marketPriceInBaseCurrency"] = p.get("marketPriceInBaseCurrency", 0)')
+    # Add netPerformancePercent alias for details endpoint compatibility
+    lines.append(f'{i3}h["netPerformancePercent"] = h.get("netPerformancePercentage", 0)')
     for k in ["netPerformancePercentageWithCurrencyEffectMap", "netPerformanceWithCurrencyEffectMap"]:
         lines.append(f'{i3}rm = p.get("{k}") or {{}}')
         lines.append(f'{i3}h["{k}"] = {{kk: float(vv) for kk, vv in rm.items()}}')
@@ -418,11 +420,19 @@ def _build_get_dividends() -> list[str]:
     i = "    "
     i2 = i * 2
     i3 = i * 3
+    i4 = i * 4
 
     lines.append(f"{i}def get_dividends(self, group_by: str | None = None) -> dict:")
     lines.append(f"{i2}sa = self.sorted_activities()")
     lines.append(f'{i2}da = [a for a in sa if a.get("type") == "DIVIDEND"]')
-    lines.append(f'{i2}if not da or not group_by: return {{"dividends": []}}')
+    lines.append(f'{i2}if not da: return {{"dividends": []}}')
+    # When no group_by, return individual dividend entries
+    lines.append(f"{i2}if not group_by:")
+    lines.append(f"{i3}dv = []")
+    lines.append(f"{i3}for a in da:")
+    lines.append(f'{i4}am = float(a.get("quantity", 0)) * float(a.get("unitPrice", 0))')
+    lines.append(f'{i4}dv.append({{"date": a.get("date", ""), "investment": am}})')
+    lines.append(f'{i3}return {{"dividends": dv}}')
     lines.append(f"{i2}gd = {{}}")
     lines.append(f"{i2}for a in da:")
     lines.append(f'{i3}dt = a.get("date", "")')

@@ -329,6 +329,8 @@ def _fix_missing_constants(code: str) -> str:
     # Replace TS type references with Python equivalents
     code = re.sub(r'\bisinstance\(([^,]+),\s*Big\)', r'isinstance(\1, Decimal)', code)
     code = re.sub(r'\bAssetSubClass\.CASH\b', '"CASH"', code)
+    # Fix Number.EPSILON (1e-15 as float) → Decimal for safe arithmetic
+    code = code.replace("1e-15", "Decimal('1E-15')")
     return code
 
 
